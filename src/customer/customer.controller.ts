@@ -17,6 +17,24 @@ export class CustomerController {
         private readonly customerService: CustomerService
     ) { }
 
+    @Get('get-store-categories')
+    @Roles(UserRole.CUSTOMER)
+    @UseGuards(SupabaseAuthGuard)
+    @HttpCode(HttpStatus.OK)
+    @UsePipes(new ValidationPipe())
+    async storeCategories(@Query('store_id') storeId: string) {
+        try {
+            const storeCategories = await this.customerService.getCateoriesByStore(storeId);
+            return storeCategories;
+        } catch (error: any) {
+            throw new HttpException(
+                error.message,
+                error?.status || HttpStatus.INTERNAL_SERVER_ERROR,
+            );
+        }
+    }
+
+
     @Post('update-customer-profile')
     @Roles(UserRole.CUSTOMER)
     @UseGuards(SupabaseAuthGuard)
@@ -320,11 +338,12 @@ export class CustomerController {
     @UsePipes(new ValidationPipe())
     async bestSelling(
         @CurrentUser(FetchUserPipe) user: User,
+        @Query('store_id') storeId: string,
         @Query() paginationDto: PaginationDto
     ) {
         try {
             const { page = 1, limit = 5 } = paginationDto;
-            const bestSelling = await this.customerService.getBestSelling(user, limit, page);
+            const bestSelling = await this.customerService.getBestSelling(user, storeId, limit, page);
             return bestSelling;
         } catch (error: any) {
             throw new HttpException(
@@ -341,11 +360,12 @@ export class CustomerController {
     @UsePipes(new ValidationPipe())
     async frequesntlySearch(
         @CurrentUser(FetchUserPipe) user: User,
+        @Query('store_id') storeId: string,
         @Query() paginationDto: PaginationDto
     ) {
         try {
             const { page = 1, limit = 5 } = paginationDto;
-            const frequesntlySearch = await this.customerService.getFrequentlySearched(user, limit, page);
+            const frequesntlySearch = await this.customerService.getFrequentlySearched(user, storeId, limit, page);
             return frequesntlySearch;
         } catch (error: any) {
             throw new HttpException(
@@ -362,11 +382,12 @@ export class CustomerController {
     @UsePipes(new ValidationPipe())
     async exclusiveOffer(
         @CurrentUser(FetchUserPipe) user: User,
+        @Query('store_id') storeId: string,
         @Query() paginationDto: PaginationDto
     ) {
         try {
             const { page = 1, limit = 5 } = paginationDto;
-            const exclusiveOffer = await this.customerService.getExclusiveOffers(user, limit, page);
+            const exclusiveOffer = await this.customerService.getExclusiveOffers(user, storeId, limit, page);
             return exclusiveOffer;
         } catch (error: any) {
             throw new HttpException(

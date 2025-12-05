@@ -12,9 +12,10 @@ import { UserPaymentMethod } from '../entities/userPaymentMethod.entity';
 import { Favourites } from '../entities/favourites.entity';
 import { ShopProduct } from '../entities/shopProducts.entity';
 import { CustomerAddress } from '../entities/customerAddress.entity';
+import { Category } from '../entities/categories.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([User, Stores, Customer, Products, Cart, CartItem, UserPaymentMethod, Favourites, ShopProduct, CustomerAddress])],
+  imports: [TypeOrmModule.forFeature([User, Stores, Customer, Products, Cart, CartItem, UserPaymentMethod, Favourites, ShopProduct, CustomerAddress, Category])],
   providers: [CustomerService],
   controllers: [CustomerController]
 })

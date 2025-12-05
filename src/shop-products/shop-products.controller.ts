@@ -10,7 +10,7 @@ import { User } from '../entities/user.entity';
 import { MerchantShopProductsService } from './merchant/merchant-shop-products.service';
 import { GetProductsDto, PaginationDto } from '../common/common-dtos/pagination.dto';
 import { CustomerShopProductsService } from './customer/customer-shop-products.service';
-import { UpdateShopProductDto, CreateShopProductDto, GetShopProductDto, SearchProduct, DeleteShopProductDto } from './dto/shop-product.dto';
+import { UpdateShopProductDto, CreateShopProductDto, GetShopProductDto, SearchProduct, DeleteShopProductDto, SearchProductByStoreDto } from './dto/shop-product.dto';
 
 @Controller('shop-products')
 export class ShopProductsController {
@@ -159,6 +159,26 @@ export class ShopProductsController {
         try {
             const searchProducts = await this.shopProductService.searchProductsForStores(dto, paginationDto);
             return searchProducts;
+        } catch (error: any) {
+            console.log({ error });
+            throw new HttpException(
+                error.message,
+                error?.status || HttpStatus.INTERNAL_SERVER_ERROR,
+            );
+        }
+    }
+
+    @Post('search-store-products')
+    @UseGuards(SupabaseAuthGuard)
+    @HttpCode(HttpStatus.OK)
+    @UsePipes(new ValidationPipe())
+    async searchStoreProducts(
+        @Body() dto: SearchProductByStoreDto,
+        @Query() paginationDto: GetProductsDto
+    ) {
+        try {
+            const searchStoreProducts = await this.shopProductService.searchProductsByStore(dto, paginationDto);
+            return searchStoreProducts;
         } catch (error: any) {
             console.log({ error });
             throw new HttpException(

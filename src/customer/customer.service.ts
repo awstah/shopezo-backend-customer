@@ -21,6 +21,7 @@ import { CustomerAddress } from '../entities/customerAddress.entity';
 import { EmployeeStatus } from '../common/enums/employee.enum';
 import { PaginationDto } from '../common/common-dtos/pagination.dto';
 import { CacheService } from '../upstash_redis/cache.service';
+import { Category } from '../entities/categories.entity';
 
 @Injectable()
 export class CustomerService {
@@ -45,6 +46,8 @@ export class CustomerService {
         private readonly customerRepo: Repository<Customer>,
         @InjectRepository(CustomerAddress)
         private readonly customerAddressRepo: Repository<CustomerAddress>,
+        @InjectRepository(Category)
+        private readonly categoryRepo: Repository<Category>,
         private readonly cacheService: CacheService,
     ) { }
 
@@ -55,6 +58,21 @@ export class CustomerService {
     //     )
     //     return ProductResponseDto.fromQueryList(shopProducts)
     // }
+
+
+    async getCateoriesByStore(storeId: string): Promise<any> {
+        if(!storeId) {
+            return []
+        }
+        const getStoreCategories = await this.categoryRepo.query(
+            `SELECT * FROM public.fun_get_store_categories($1)`,
+            [
+                storeId || null
+            ]
+        );
+        return getStoreCategories
+    }
+
 
     private async getCustomerPrimaryAddress(user: User): Promise<CustomerAddress | null> {
 
@@ -94,7 +112,7 @@ export class CustomerService {
         const cacheKey = `nearby_stores:${customerLat}:${customerLng}:${radiusKm}:${isStoreDetailsNeeded}`;
         const cachedStores = await this.cacheService.get<any[]>(cacheKey);
         if (cachedStores) {
-                return cachedStores;
+            return cachedStores;
         }
         const baseSelect = isStoreDetailsNeeded
             ? `id, store_name, store_address, store_logo, is_deleted, latitude, longitude`
@@ -194,6 +212,53 @@ export class CustomerService {
             };
         } catch (error) {
             console.error('Error in getProductsFromNearbyStores:', error);
+            return {
+                data: [],
+                total: 0,
+                page: Number(page),
+                limit: Number(limit)
+            };
+        }
+    }
+
+    private async getProductsFromStore(
+        user: User,
+        storeId: string,
+        limit: number,
+        page: number = 1
+    ): Promise<{ data: ProductResponseDto[]; total: number; page: number; limit: number }> {
+        try {
+            // const primaryAddress = await this.getCustomerPrimaryAddress(user);
+
+            if (!storeId) {
+                return {
+                    data: [],
+                    total: 0,
+                    page: Number(page),
+                    limit: Number(limit)
+                };
+            }
+
+            const offset = (page - 1) * limit;
+
+            const shopProducts = await this.shopProductRepo.query(
+                `SELECT * FROM public.fun_get_store_products($1, $2, $3)`,
+                [storeId, limit, offset]
+            );
+
+            const total = shopProducts.length > 0 ? Number(shopProducts[0]?.total_count || 0) : 0;
+
+            const productsWithoutTotal = shopProducts.map(({ total_count, ...rest }) => rest);
+            const data = ProductResponseDto.fromQueryList(productsWithoutTotal);
+
+            return {
+                data,
+                total,
+                page: Number(page),
+                limit: Number(limit)
+            };
+        } catch (error) {
+            console.error('Error in getProductsFromStore:', error);
             return {
                 data: [],
                 total: 0,
@@ -376,7 +441,7 @@ export class CustomerService {
                 }
             }, relations: ['cart_items', 'customer', 'cart_items.shop_product.product']
         });
-        
+
         if (!cart) {
             cart = this.cartRepository.create({
                 customer: {
@@ -392,14 +457,14 @@ export class CustomerService {
 
         // Cache the cart for 30 minutes
         await this.cacheService.cacheCart(customerId, cart, 1800);
-        
+
         return cart;
     }
 
     async addToCart(dto: AddToCartDto, user: User): Promise<any> {
         const { shop_product_id, quantity } = dto;
         const getUserCart = await this.getOrCreateCart(user);
-        
+
         // Get customer ID from cart for cache invalidation
         let customerId: string | undefined = getUserCart.customer?.id;
         if (!customerId) {
@@ -455,27 +520,27 @@ export class CustomerService {
             });
             await this.cartItemRepository.save(cartItem);
         };
-        
+
         // Invalidate cart cache
         await this.cacheService.invalidateCart(finalCustomerId);
         await this.cacheService.del(`cart:formatted:${finalCustomerId}`);
-        
+
         const updatedCart = await this.cartRepository.findOne({
             where: { id: getUserCart.id },
             relations: ['cart_items', 'customer', 'cart_items.shop_product.product']
         });
         if (!updatedCart) return null;
-        
+
         // Ensure cart_items is always an array
         if (!updatedCart.cart_items) {
             updatedCart.cart_items = [];
         }
-        
+
         // Update cache with new cart data
         await this.cacheService.cacheCart(finalCustomerId, updatedCart, 1800);
         const formattedCart = formatCartResponse(updatedCart, true);
         await this.cacheService.set(`cart:formatted:${finalCustomerId}`, formattedCart, { ttl: 900 });
-        
+
         return formatCartResponse(updatedCart, true)
     }
 
@@ -487,7 +552,7 @@ export class CustomerService {
         if (!findUser?.customer?.id) throw new NotFoundException("Customer not found");
 
         const customerId = findUser.customer.id;
-        
+
         // Try to get formatted cart from cache
         const cacheKey = `cart:formatted:${customerId}`;
         const cachedFormattedCart = await this.cacheService.get(cacheKey);
@@ -498,16 +563,16 @@ export class CustomerService {
         // If not in cache, get cart and format it
         const cart = await this.getOrCreateCart(user);
         const formattedCart = formatCartResponse(cart, true);
-        
+
         // Cache the formatted cart for 15 minutes (shorter TTL for formatted response)
         await this.cacheService.set(cacheKey, formattedCart, { ttl: 900 });
-        
+
         return formattedCart;
     }
 
     async updateCartItem(user: User, dto: UpdateCartItemsDto) {
         const cart = await this.getOrCreateCart(user);
-        
+
         // Get customer ID from cart for cache invalidation
         let customerId: string | undefined = cart.customer?.id;
         if (!customerId) {
@@ -522,7 +587,7 @@ export class CustomerService {
         }
         // TypeScript now knows customerId is string after the check
         const finalCustomerId: string = customerId;
-        
+
         for (const item of dto.items) {
             const sp = await this.shopProductRepo.findOne({ where: { id: item.shop_product_id, is_deleted: false, is_available: true } });
             if (!sp) throw new NotFoundException('Shop Product not found');
@@ -544,27 +609,27 @@ export class CustomerService {
                 await this.cartItemRepository.save(existingItem);
             }
         }
-        
+
         // Invalidate cart cache
         await this.cacheService.invalidateCart(finalCustomerId);
         await this.cacheService.del(`cart:formatted:${finalCustomerId}`);
-        
+
         const updatedCart = await this.cartRepository.findOne({
             where: { id: cart.id },
             relations: ['cart_items', 'customer', 'cart_items.shop_product.product'],
         });
         if (!updatedCart) return null;
-        
+
         // Ensure cart_items is always an array
         if (!updatedCart.cart_items) {
             updatedCart.cart_items = [];
         }
-        
+
         // Update cache with new cart data
         await this.cacheService.cacheCart(finalCustomerId, updatedCart, 1800);
         const formattedCart = formatCartResponse(updatedCart, true);
         await this.cacheService.set(`cart:formatted:${finalCustomerId}`, formattedCart, { ttl: 900 });
-        
+
         return formatCartResponse(updatedCart, true);
     }
 
@@ -699,16 +764,16 @@ export class CustomerService {
         }));
     }
 
-    async getBestSelling(user: User, limit = 5, page = 1) {
-        return this.getProductsFromNearbyStores(user, limit, page);
+    async getBestSelling(user: User, storeId: string, limit = 5, page = 1) {
+        return this.getProductsFromStore(user, storeId, limit, page);
     }
 
-    async getFrequentlySearched(user: User, limit = 5, page = 1) {
-        return this.getProductsFromNearbyStores(user, limit, page);
+    async getFrequentlySearched(user: User, storeId: string, limit = 5, page = 1) {
+        return this.getProductsFromStore(user, storeId, limit, page);
     }
 
-    async getExclusiveOffers(user: User, limit = 5, page = 1) {
-        return this.getProductsFromNearbyStores(user, limit, page);
+    async getExclusiveOffers(user: User, storeId: string, limit = 5, page = 1) {
+        return this.getProductsFromStore(user, storeId, limit, page);
     }
 
     async getProductsFromNearbyStoresPaginated(
@@ -813,10 +878,10 @@ export class CustomerService {
             }, relations: ['addresses'],
         });
         if (!findCustomer) throw new BadRequestException("Customer details not found");
-        
+
         const selectedAddress = findCustomer.addresses.find(addr => addr.id === address_id);
         if (!selectedAddress) throw new BadRequestException("Address not found");
-        
+
         if (selectedAddress.is_primary) {
             await this.customerAddressRepo.update({ id: address_id }, { is_primary: false });
             return {
@@ -824,7 +889,7 @@ export class CustomerService {
                 address: { ...selectedAddress, is_primary: false },
             };
         }
-        
+
         await this.customerAddressRepo.manager.transaction(async (manager) => {
             await manager.update(CustomerAddress, { customer: { id: findCustomer.id } }, { is_primary: false });
             await manager.update(CustomerAddress, { id: address_id }, { is_primary: true });
@@ -834,8 +899,11 @@ export class CustomerService {
             message: "Address marked as primary",
             address: { ...selectedAddress, is_primary: true }
         };
-        
+
     }
+
+
+
 
 
 }

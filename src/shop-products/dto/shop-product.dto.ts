@@ -80,6 +80,21 @@ export class SearchProduct {
 }
 
 
+export class SearchProductByStoreDto {
+    @IsString()
+    @IsOptional()
+    text: string
+
+    @IsString()
+    @IsOptional()
+    category_id: string
+
+    @IsString()
+    @IsOptional()
+    store_id: string
+}
+
+
 export class ProductResponseDto {
     shop_product_id: string;
     product_name: string;

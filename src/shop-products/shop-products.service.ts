@@ -13,7 +13,7 @@ import { paginate } from '../utils/product.utils';
 import { GetProductsDto } from '../common/common-dtos/pagination.dto';
 import { UserRole } from '../common/enums/user-role.enum';
 import { Favourites } from '../entities/favourites.entity';
-import { ProductResponseDto, SearchProduct } from './dto/shop-product.dto';
+import { ProductResponseDto, SearchProduct, SearchProductByStoreDto } from './dto/shop-product.dto';
 
 @Injectable()
 export class ShopProductsService {
@@ -52,7 +52,7 @@ export class ShopProductsService {
         return result;
         // return ProductResponseDto.fromQueryList(getShopProducts)
     }
-// next method is updated we can remove this later
+    // next method is updated we can remove this later
     async searchProducts(dto: SearchProduct): Promise<any> {
         const searchProds = await this.shopProductRepo.query(
             `SELECT * FROM public.fun_search_shop_products($1, $2, $3, $4)`,
@@ -60,7 +60,7 @@ export class ShopProductsService {
                 dto.text || '',
                 dto.category_id || null,
                 dto.store_ids ? dto.store_ids.join(',') : null,
-               
+
             ]
         );
         return ProductResponseDto.fromQueryList(searchProds);
@@ -69,9 +69,9 @@ export class ShopProductsService {
     async searchProductsForStores(dto: SearchProduct, paginationDto: GetProductsDto): Promise<any> {
         const { page = 1, limit = 10 } = paginationDto;
         const offset = (page - 1) * limit;
-        
-        const storeIdsArray = dto.store_ids && dto.store_ids.length > 0 
-            ? dto.store_ids 
+
+        const storeIdsArray = dto.store_ids && dto.store_ids.length > 0
+            ? dto.store_ids
             : null;
 
         const searchProds = await this.shopProductRepo.query(
@@ -97,6 +97,34 @@ export class ShopProductsService {
             limit: Number(limit)
         };
     }
+
+
+    async searchProductsByStore(dto: SearchProductByStoreDto, paginationDto: GetProductsDto): Promise<any> {
+        const { page = 1, limit = 10 } = paginationDto;
+        const offset = (page - 1) * limit;
+        const searchProds = await this.shopProductRepo.query(
+            `SELECT * FROM public.fun_search_store_products($1, $2, $3, $4, $5)`,
+            [
+                dto.store_id || null,
+                dto.category_id || null,
+                dto.text || '',
+                limit,
+                offset
+            ]
+        );
+        const total = searchProds.length > 0 ? Number(searchProds[0]?.total_count || 0) : 0;
+
+        const productsWithoutTotal = searchProds.map(({ total_count, ...rest }) => rest);
+        const data = ProductResponseDto.fromQueryList(productsWithoutTotal);
+        return {
+            data,
+            total,
+            page: Number(page),
+            limit: Number(limit)
+        };
+    }
+
+
     // async getDetailOfShopProduct(_user: User, dto: GetShopProductDto): Promise<ShopProduct | null> {
     //     const getShopProductById = await this.shopProductRepo.createQueryBuilder("shop_product")
     //         .leftJoinAndSelect("shop_product.product", "product")
