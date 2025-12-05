@@ -7,7 +7,7 @@ import { FetchUserPipe } from '../common/pipes/fetch-user.pipe';
 import { CheckoutDto } from '../customer/dto/customer.dto';
 import { OrderService } from './order.service';
 import { User } from '../entities/user.entity';
-import { AdminGetOrdersDto, AssignOrderDto, GetDriverOrdersStatusDto, UpdateDriverOrderStatusDto, UpdateOrderStatusDto } from './dto/order.dto';
+import { AdminGetOrdersDto, AssignOrderDto, GetDriverOrdersStatusDto, ReorderDto, UpdateDriverOrderStatusDto, UpdateOrderStatusDto } from './dto/order.dto';
 import { PaginationDto } from '../common/common-dtos/pagination.dto';
 import { DriverAssignmentStatus, OrderStatus } from '../common/enums/order.enum';
 import { PaymentMethod } from '../common/enums/payment.enum';
@@ -203,6 +203,46 @@ export class OrderController {
             console.log({file});
             const updateOrderStatus = await this.orderService.orderStatusByDriver(user, dto, file);
             return updateOrderStatus;
+        } catch (error: any) {
+            console.log(error);
+            throw new HttpException(
+                error.message,
+                error?.status || HttpStatus.INTERNAL_SERVER_ERROR,
+            );
+        }
+    }
+
+    @Get('get-previous-orders-for-reorder')
+    @UseGuards(SupabaseAuthGuard)
+    @Roles(UserRole.CUSTOMER)
+    @HttpCode(HttpStatus.OK)
+    @UsePipes(new ValidationPipe())
+    async getPreviousOrdersForReorder(
+        @CurrentUser(FetchUserPipe) user: User
+    ) {
+        try {
+            const previousOrders = await this.orderService.getPreviousOrdersForReorder(user);
+            return previousOrders;
+        } catch (error: any) {
+            throw new HttpException(
+                error.message,
+                error?.status || HttpStatus.INTERNAL_SERVER_ERROR,
+            );
+        }
+    }
+
+    @Post('reorder')
+    @HttpCode(HttpStatus.CREATED)
+    @UseGuards(SupabaseAuthGuard)
+    @Roles(UserRole.CUSTOMER)
+    @UsePipes(new ValidationPipe())
+    async reorder(
+        @Body() dto: ReorderDto,
+        @CurrentUser(FetchUserPipe) user: User
+    ) {
+        try {
+            const reorderResult = await this.orderService.reorder(user, dto);
+            return reorderResult;
         } catch (error: any) {
             console.log(error);
             throw new HttpException(

@@ -1,6 +1,7 @@
 import { IsEnum, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 import { DriverAssignmentStatus, OrderStatus } from '../../common/enums/order.enum';
 import { UserRole } from '../../common/enums/user-role.enum';
+import { PaymentMethod } from '../../common/enums/payment.enum';
 
 export class AdminGetOrdersDto {
     @IsOptional()
@@ -90,4 +91,17 @@ export class GetDriverOrdersStatusDto {
     @IsOptional()
     @IsEnum({ ...OrderStatus, ...DriverAssignmentStatus })
     status: OrderStatus | DriverAssignmentStatus;
+}
+
+export class ReorderDto {
+    @IsNotEmpty()
+    @IsString()
+    order_id: string;
+
+    @IsNotEmpty()
+    @IsString()
+    customer_address_id: string;
+
+    @IsEnum(PaymentMethod)
+    payment_method: PaymentMethod;
 }

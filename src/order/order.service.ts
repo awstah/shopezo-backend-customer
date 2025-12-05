@@ -11,7 +11,7 @@ import { Products } from '../entities/products.entity';
 import { Stores } from '../entities/stores.entity';
 import { User } from '../entities/user.entity';
 import { DataSource, Repository } from 'typeorm';
-import { AdminGetOrdersDto, AssignOrderDto, GetDriverOrdersStatusDto, UpdateDriverOrderStatusDto, UpdateOrderStatusDto } from './dto/order.dto';
+import { AdminGetOrdersDto, AssignOrderDto, GetDriverOrdersStatusDto, ReorderDto, UpdateDriverOrderStatusDto, UpdateOrderStatusDto } from './dto/order.dto';
 import { ProductResponseDto } from '../shop-products/dto/shop-product.dto';
 import { calculateDiscountPrice, paginate } from '../utils/product.utils';
 import { PaginationDto } from '../common/common-dtos/pagination.dto';
@@ -969,5 +969,220 @@ export class OrderService {
         return { message: 'Order status updated successfully', assignment };
     }
 
+    async getPreviousOrdersForReorder(user: User): Promise<any> {
+        const userWithCustomer = await this.userRepo.findOne({
+            where: { id: user.id },
+            relations: ['customer']
+        });
+
+        if (!userWithCustomer?.customer) {
+            throw new NotFoundException('Customer details not found.');
+        }
+
+        const previousOrders = await this.orderRepo
+            .createQueryBuilder('order')
+            .leftJoinAndSelect('order.items', 'orderItem')
+            .leftJoinAndSelect('orderItem.shop_product', 'shopProduct')
+            .leftJoinAndSelect('shopProduct.product', 'product')
+            .leftJoinAndSelect('product.images', 'images')
+            .leftJoinAndSelect('shopProduct.store', 'store')
+            .where('order.customer_id = :customer_id', { customer_id: userWithCustomer.customer.id })
+            .andWhere('order.order_status IN (:...statuses)', {
+                statuses: [OrderStatus.COMPLETE, OrderStatus.ORDER_RECEIVE]
+            })
+            .andWhere('store.is_deleted = false')
+            .andWhere('shopProduct.is_deleted = false')
+            .andWhere('product.is_deleted = false')
+            .andWhere('images.is_deleted = false')
+            .orderBy('RANDOM()')
+            .limit(5)
+            .getMany();
+
+        return previousOrders.map((order) => {
+            const formattedOrder = {
+                ...order,
+                total_amount: Number(order.total_amount) || 0,
+                total_payable_amount: Number(order.total_payable_amount) || 0,
+                total_discounted_amount: Number(order.total_discounted_amount) || 0,
+                items: order.items?.map((item: any) => ({
+                    ...item,
+                    quantity: item.quantity,
+                    price: Number(item.price) || 0,
+                    total_amount: Number(item.total_amount) || 0,
+                    discounted_amount: Number(item.discounted_amount) || 0,
+                    payable_amount: Number(item.payable_amount) || 0,
+                    shop_product: item.shop_product
+                        ? {
+                            id: item.shop_product.id,
+                            price: Number(item.shop_product.price) || 0,
+                            discount: item.shop_product.discount || 0,
+                            stock: item.shop_product.stock || 0,
+                            is_available: item.shop_product.is_available,
+                            product: item.shop_product.product
+                                ? {
+                                    id: item.shop_product.product.id,
+                                    product_name: item.shop_product.product.product_name,
+                                    description: item.shop_product.product.description,
+                                    product_size: item.shop_product.product.product_size,
+                                    images: item.shop_product.product.images
+                                        ?.filter((img: any) => !img.is_deleted)
+                                        .map((img: any) => img.url) || [],
+                                }
+                                : null,
+                            store: item.shop_product.store
+                                ? {
+                                    id: item.shop_product.store.id,
+                                    store_name: item.shop_product.store.store_name,
+                                    store_address: item.shop_product.store.store_address,
+                                    store_logo: item.shop_product.store.store_logo,
+                                }
+                                : null,
+                        }
+                        : null,
+                })) || [],
+            };
+            return formattedOrder;
+        });
+    }
+
+    async reorder(user: User, dto: ReorderDto): Promise<any> {
+        return this.dataSource.transaction(async (manager) => {
+            const userRepo = manager.getRepository(User);
+            const customerRepo = manager.getRepository(Customer);
+            const orderRepo = manager.getRepository(Order);
+            const orderItemRepo = manager.getRepository(OrderItem);
+            const shopProductRepo = manager.getRepository(ShopProduct);
+
+            const userWithCustomer = await userRepo.findOne({
+                where: { id: user.id, is_verified: true },
+                relations: ['customer'],
+            });
+
+            if (!userWithCustomer?.customer) {
+                throw new NotFoundException('Customer details not found.');
+            }
+
+            const customer = await customerRepo.findOne({
+                where: { id: userWithCustomer.customer.id },
+                relations: ['addresses'],
+            });
+
+            if (!customer) {
+                throw new NotFoundException('Customer not found.');
+            }
+
+            const selectedAddress = customer.addresses.find(
+                (addr) => addr.id === dto.customer_address_id && addr.is_deleted === false,
+            );
+
+            if (!selectedAddress) {
+                throw new BadRequestException('Invalid customer address.');
+            }
+
+            const previousOrder = await orderRepo.findOne({
+                where: { id: dto.order_id },
+                relations: ['customer', 'items', 'items.shop_product', 'items.shop_product.store'],
+            });
+
+            if (!previousOrder) {
+                throw new NotFoundException('Previous order not found.');
+            }
+
+            if (previousOrder.customer.id !== customer.id) {
+                throw new ForbiddenException('You can only reorder your own orders.');
+            }
+
+            const itemsByStore = new Map<string, typeof previousOrder.items>();
+            for (const item of previousOrder.items) {
+                const storeId = item.shop_product.store.id;
+                if (!itemsByStore.has(storeId)) {
+                    itemsByStore.set(storeId, []);
+                }
+                itemsByStore.get(storeId)!.push(item);
+            }
+
+            const createdOrders: Order[] = [];
+
+            for (const [_storeId, storeItems] of itemsByStore.entries()) {
+                let orderTotalAmount = 0;
+                let orderTotalDiscount = 0;
+                let orderPayableAmount = 0;
+                const orderItems: OrderItem[] = [];
+
+                for (const previousItem of storeItems) {
+                    const shopProductId = previousItem.shop_product.id;
+
+                    const currentShopProduct = await shopProductRepo.findOne({
+                        where: { id: shopProductId },
+                        lock: { mode: 'pessimistic_write' },
+                    });
+
+                    if (!currentShopProduct) {
+                        throw new NotFoundException(`Product ${shopProductId} is no longer available.`);
+                    }
+
+                    if (!currentShopProduct.is_available) {
+                        throw new BadRequestException(`Product ${currentShopProduct.id} is not available.`);
+                    }
+
+                    if (currentShopProduct.stock < previousItem.quantity) {
+                        throw new BadRequestException(
+                            `Insufficient stock for product ${currentShopProduct.id}. Available: ${currentShopProduct.stock}, Required: ${previousItem.quantity}`
+                        );
+                    }
+
+                    currentShopProduct.stock -= previousItem.quantity;
+                    await shopProductRepo.save(currentShopProduct);
+
+                    const currentPrice = Number(currentShopProduct.price) || 0;
+                    const priceAfterDiscount = Number(currentShopProduct.discount) > 0
+                        ? calculateDiscountPrice(currentPrice, currentShopProduct.discount)
+                        : currentPrice;
+                    const totalAmount = currentPrice * previousItem.quantity;
+                    const payableAmount = priceAfterDiscount * previousItem.quantity;
+                    const discountedAmount = Number(currentShopProduct.discount) > 0
+                        ? totalAmount - payableAmount
+                        : 0;
+
+                    orderTotalAmount += totalAmount;
+                    orderTotalDiscount += discountedAmount;
+                    orderPayableAmount += payableAmount;
+
+                    orderItems.push(
+                        orderItemRepo.create({
+                            shop_product: currentShopProduct,
+                            quantity: previousItem.quantity,
+                            price: currentShopProduct.price,
+                            total_amount: totalAmount,
+                            payable_amount: payableAmount,
+                            discounted_amount: discountedAmount,
+                        }),
+                    );
+                }
+
+                const newOrder = orderRepo.create({
+                    customer,
+                    items: orderItems,
+                    total_amount: orderTotalAmount,
+                    total_payable_amount: orderPayableAmount,
+                    total_discounted_amount: orderTotalDiscount,
+                    order_status: OrderStatus.PENDING,
+                    payment_type: dto.payment_method,
+                    customer_address: { id: dto.customer_address_id },
+                });
+
+                const savedOrder = await orderRepo.save(newOrder);
+                createdOrders.push(savedOrder);
+            }
+
+            await this.cacheService.invalidateCart(customer.id);
+            await this.cacheService.del(`cart:formatted:${customer.id}`);
+
+            return {
+                message: 'Order reordered successfully',
+                order_id: createdOrders.map((o) => o.id)
+            };
+        });
+    }
 
 }
