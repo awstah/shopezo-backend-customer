@@ -105,7 +105,7 @@ export class ShopProductsService {
         const searchProds = await this.shopProductRepo.query(
             `SELECT * FROM public.fun_search_store_products($1, $2, $3, $4, $5)`,
             [
-                dto.store_id || null,
+                dto.store_ids && dto.store_ids.length > 0 ? dto.store_ids : null,
                 dto.category_id || null,
                 dto.text || '',
                 limit,

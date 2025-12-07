@@ -60,14 +60,14 @@ export class CustomerService {
     // }
 
 
-    async getCateoriesByStore(storeId: string): Promise<any> {
-        if(!storeId) {
+    async getCateoriesByStore(storeIds: string[]): Promise<any> {
+        if (!storeIds || storeIds.length === 0) {
             return []
         }
         const getStoreCategories = await this.categoryRepo.query(
             `SELECT * FROM public.fun_get_store_categories($1)`,
             [
-                storeId || null
+                storeIds
             ]
         );
         return getStoreCategories

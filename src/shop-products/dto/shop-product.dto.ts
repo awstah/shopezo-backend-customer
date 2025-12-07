@@ -89,9 +89,9 @@ export class SearchProductByStoreDto {
     @IsOptional()
     category_id: string
 
-    @IsString()
+    @IsString({ each: true })
     @IsOptional()
-    store_id: string
+    store_ids: string[]
 }
 
 

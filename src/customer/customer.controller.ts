@@ -8,7 +8,7 @@ import { UserRole } from '../common/enums/user-role.enum';
 import { SupabaseAuthGuard } from '../common/guards/auth.guard';
 import { AddFavToCartDto, AddToCartDto, AddToFavouriteDto, UpdateCartItemsDto } from './dto/cart.dto';
 import { AddCardDto, UpdateCardDto } from './dto/payment-method.dto';
-import { CreateCustomerAddressDto, TogglePrimaryAddressDto, UpdateAddressDto, UpdateCustomerProfileDto } from './dto/customer.dto';
+import { CreateCustomerAddressDto, GetStoreCategoriesDto, TogglePrimaryAddressDto, UpdateAddressDto, UpdateCustomerProfileDto } from './dto/customer.dto';
 import { PaginationDto } from '../common/common-dtos/pagination.dto';
 
 @Controller('customer')
@@ -17,14 +17,14 @@ export class CustomerController {
         private readonly customerService: CustomerService
     ) { }
 
-    @Get('get-store-categories')
+    @Post('get-store-categories')
     @Roles(UserRole.CUSTOMER)
     @UseGuards(SupabaseAuthGuard)
     @HttpCode(HttpStatus.OK)
     @UsePipes(new ValidationPipe())
-    async storeCategories(@Query('store_id') storeId: string) {
+    async storeCategories(@Body() dto: GetStoreCategoriesDto) {
         try {
-            const storeCategories = await this.customerService.getCateoriesByStore(storeId);
+            const storeCategories = await this.customerService.getCateoriesByStore(dto.store_ids);
             return storeCategories;
         } catch (error: any) {
             throw new HttpException(

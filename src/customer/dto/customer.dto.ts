@@ -223,4 +223,10 @@ export class TogglePrimaryAddressDto {
     address_id: string;
 }
 
+export class GetStoreCategoriesDto {
+    @ArrayNotEmpty()
+    @IsString({ each: true })
+    store_ids: string[];
+}
+
 

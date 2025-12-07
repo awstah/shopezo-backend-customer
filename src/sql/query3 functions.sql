@@ -199,30 +199,30 @@ $function$
 -- GRANT ALL ON FUNCTION public.fun_search_shop_products(text, uuid, _uuid, int4, int4) TO authenticated;
 -- GRANT ALL ON FUNCTION public.fun_search_shop_products(text, uuid, _uuid, int4, int4) TO service_role;
 
--- DROP FUNCTION public.fun_get_store_categories(uuid);
+-- DROP FUNCTION public.fun_get_store_categories(_uuid);
 
-CREATE OR REPLACE FUNCTION public.fun_get_store_categories(p_store_id uuid)
+CREATE OR REPLACE FUNCTION public.fun_get_store_categories(p_store_ids uuid[])
  RETURNS TABLE(category_id uuid, category_name text, category_image text, category_created_at timestamp without time zone, category_updated_at timestamp without time zone, product_count bigint)
  LANGUAGE sql
 AS $function$
-  SELECT DISTINCT
+  SELECT
     c.id AS category_id,
     c.category_name,
     c.category_image,
     c.created_at AS category_created_at,
     c.updated_at AS category_updated_at,
-    COUNT(DISTINCT sp.id) OVER (PARTITION BY c.id) AS product_count
+    COUNT(DISTINCT sp.id) AS product_count
   FROM category c
   JOIN products p ON p.category_id = c.id
   JOIN shop_product sp ON sp.product_id = p.id
-  WHERE sp.store_id = p_store_id
+  WHERE sp.store_id = ANY(p_store_ids)
     AND p.is_deleted = false
     AND p.is_active = true
     AND p.status = 'approved'::products_status_enum
     AND sp.is_deleted = false
     AND sp.is_available = true
     AND sp.stock > 0
-  GROUP BY c.id, c.category_name, c.category_image, c.created_at, c.updated_at, sp.id
+  GROUP BY c.id, c.category_name, c.category_image, c.created_at, c.updated_at
   ORDER BY c.category_name ASC;
 $function$
 ;
@@ -290,9 +290,9 @@ $function$
 -- GRANT ALL ON FUNCTION public.fun_get_store_products(uuid, int4, int4) TO authenticated;
 -- GRANT ALL ON FUNCTION public.fun_get_store_products(uuid, int4, int4) TO service_role;
 
--- DROP FUNCTION public.fun_search_store_products(uuid, uuid, text, int4, int4);
+-- DROP FUNCTION public.fun_search_store_products(_uuid, uuid, text, int4, int4);
 
-CREATE OR REPLACE FUNCTION public.fun_search_store_products(p_store_id uuid, p_category_id uuid DEFAULT NULL::uuid, search_term text DEFAULT ''::text, limit_count integer DEFAULT 10, offset_count integer DEFAULT 0)
+CREATE OR REPLACE FUNCTION public.fun_search_store_products(p_store_ids uuid[], p_category_id uuid DEFAULT NULL::uuid, search_term text DEFAULT ''::text, limit_count integer DEFAULT 10, offset_count integer DEFAULT 0)
  RETURNS TABLE(shop_product_id uuid, product_name text, description text, price numeric, discount integer, stock integer, reviews integer, product_size text, shop_created_at timestamp without time zone, shop_updated_at timestamp without time zone, category_id uuid, category_name text, category_image text, images text[], total_count bigint)
  LANGUAGE sql
 AS $function$
@@ -319,7 +319,7 @@ AS $function$
   JOIN products p ON sp.product_id = p.id
   JOIN category c ON p.category_id = c.id
   LEFT JOIN product_images i ON i.product_id = p.id
-  WHERE sp.store_id = p_store_id
+  WHERE (p_store_ids IS NULL OR sp.store_id = ANY(p_store_ids))
     AND p.is_deleted = false
     AND p.is_active = true
     AND p.status = 'approved'::products_status_enum
