@@ -924,7 +924,7 @@ export class OrderService {
                 if (assignment.status !== DriverAssignmentStatus.PICKED) {
                     throw new BadRequestException('Order must be picked before delivered');
                 }
-                if (!dto.latitude || !dto.longitude) {
+                if (!dto.latitude || !dto.longitude || !file) {
                     throw new BadRequestException(
                         'Location (latitude, longitude) are required for delivery completion',
                     );
@@ -934,7 +934,6 @@ export class OrderService {
                 throw new BadRequestException('Invalid status provided');
         }
         assignment.status = dto.status;
-        await this.orderAssignmentRepo.save(assignment);
 
         const order = assignment.order;
 
@@ -966,6 +965,7 @@ export class OrderService {
             assignment.driver.driver_status = DriverAvailabilityStatus.FREE
             await this.driverRepo.save(assignment.driver)
         }
+        await this.orderAssignmentRepo.save(assignment);
         return { message: 'Order status updated successfully', assignment };
     }
 

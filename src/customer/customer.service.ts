@@ -222,15 +222,15 @@ export class CustomerService {
     }
 
     private async getProductsFromStore(
-        user: User,
-        storeId: string,
+        _user: User,
+        storeIds: string[],
         limit: number,
         page: number = 1
     ): Promise<{ data: ProductResponseDto[]; total: number; page: number; limit: number }> {
         try {
             // const primaryAddress = await this.getCustomerPrimaryAddress(user);
 
-            if (!storeId) {
+            if (!storeIds || storeIds.length === 0) {
                 return {
                     data: [],
                     total: 0,
@@ -242,8 +242,8 @@ export class CustomerService {
             const offset = (page - 1) * limit;
 
             const shopProducts = await this.shopProductRepo.query(
-                `SELECT * FROM public.fun_get_store_products($1, $2, $3)`,
-                [storeId, limit, offset]
+                `SELECT * FROM public.fun_get_shop_products_by_stores($1, $2, $3)`,
+                [storeIds, limit, offset]
             );
 
             const total = shopProducts.length > 0 ? Number(shopProducts[0]?.total_count || 0) : 0;
@@ -764,16 +764,16 @@ export class CustomerService {
         }));
     }
 
-    async getBestSelling(user: User, storeId: string, limit = 5, page = 1) {
-        return this.getProductsFromStore(user, storeId, limit, page);
+    async getBestSelling(user: User, storeIds: string[], limit = 5, page = 1) {
+        return this.getProductsFromStore(user, storeIds, limit, page);
     }
 
-    async getFrequentlySearched(user: User, storeId: string, limit = 5, page = 1) {
-        return this.getProductsFromStore(user, storeId, limit, page);
+    async getFrequentlySearched(user: User, storeIds: string[], limit = 5, page = 1) {
+        return this.getProductsFromStore(user, storeIds, limit, page);
     }
 
-    async getExclusiveOffers(user: User, storeId: string, limit = 5, page = 1) {
-        return this.getProductsFromStore(user, storeId, limit, page);
+    async getExclusiveOffers(user: User, storeIds: string[], limit = 5, page = 1) {
+        return this.getProductsFromStore(user, storeIds, limit, page);
     }
 
     async getProductsFromNearbyStoresPaginated(

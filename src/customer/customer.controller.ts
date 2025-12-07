@@ -338,12 +338,12 @@ export class CustomerController {
     @UsePipes(new ValidationPipe())
     async bestSelling(
         @CurrentUser(FetchUserPipe) user: User,
-        @Query('store_id') storeId: string,
+        @Body() dto: GetStoreCategoriesDto,
         @Query() paginationDto: PaginationDto
     ) {
         try {
             const { page = 1, limit = 5 } = paginationDto;
-            const bestSelling = await this.customerService.getBestSelling(user, storeId, limit, page);
+            const bestSelling = await this.customerService.getBestSelling(user, dto.store_ids, limit, page);
             return bestSelling;
         } catch (error: any) {
             throw new HttpException(
@@ -360,12 +360,12 @@ export class CustomerController {
     @UsePipes(new ValidationPipe())
     async frequesntlySearch(
         @CurrentUser(FetchUserPipe) user: User,
-        @Query('store_id') storeId: string,
+        @Body() dto: GetStoreCategoriesDto,
         @Query() paginationDto: PaginationDto
     ) {
         try {
             const { page = 1, limit = 5 } = paginationDto;
-            const frequesntlySearch = await this.customerService.getFrequentlySearched(user, storeId, limit, page);
+            const frequesntlySearch = await this.customerService.getFrequentlySearched(user, dto.store_ids, limit, page);
             return frequesntlySearch;
         } catch (error: any) {
             throw new HttpException(
@@ -382,12 +382,12 @@ export class CustomerController {
     @UsePipes(new ValidationPipe())
     async exclusiveOffer(
         @CurrentUser(FetchUserPipe) user: User,
-        @Query('store_id') storeId: string,
+        @Body() dto: GetStoreCategoriesDto,
         @Query() paginationDto: PaginationDto
     ) {
         try {
             const { page = 1, limit = 5 } = paginationDto;
-            const exclusiveOffer = await this.customerService.getExclusiveOffers(user, storeId, limit, page);
+            const exclusiveOffer = await this.customerService.getExclusiveOffers(user, dto.store_ids, limit, page);
             return exclusiveOffer;
         } catch (error: any) {
             throw new HttpException(
