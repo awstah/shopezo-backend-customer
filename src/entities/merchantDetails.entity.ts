@@ -4,6 +4,7 @@ import { Shopkepper } from "./shopkeeperDetails.entity";
 import { Driver } from "./driverDetails.entity";
 import { Stores } from "./stores.entity";
 import { TempProducts } from "./tempProducts.entity";
+import { Complaint } from "./complaint.entity";
 
 @Entity()
 export class Merchant {
@@ -46,6 +47,9 @@ export class Merchant {
 
     @OneToMany(() => TempProducts, (tempProduct) => tempProduct.merchant)
     tempProducts: TempProducts[];
+
+    @OneToMany(() => Complaint, (complaint) => complaint.merchant)
+    complaints: Complaint[];
 
     @CreateDateColumn()
     created_at: Date;

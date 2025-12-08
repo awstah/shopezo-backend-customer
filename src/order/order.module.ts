@@ -13,9 +13,10 @@ import { Shopkepper } from '../entities/shopkeeperDetails.entity';
 import { Driver } from '../entities/driverDetails.entity';
 import { OrderDriverAssignment } from '../entities/orderDriverAssignment.entity';
 import { UploadService } from '../utils/upload.service';
+import { Notification } from '../entities/notification.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([User, Customer, Cart, CartItem, OrderItem, Order, ShopProduct, Shopkepper, Driver, OrderDriverAssignment])],
+  imports: [TypeOrmModule.forFeature([User, Customer, Cart, CartItem, OrderItem, Order, ShopProduct, Shopkepper, Driver, OrderDriverAssignment, Notification])],
   providers: [OrderService, UploadService],
   controllers: [OrderController]
 })

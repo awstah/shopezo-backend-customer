@@ -7,6 +7,8 @@ import { PaymentMethod } from "../common/enums/payment.enum";
 import { CustomerAddress } from "./customerAddress.entity";
 import { Driver } from "./driverDetails.entity";
 import { OrderDriverAssignment } from "./orderDriverAssignment.entity";
+import { Notification } from "./notification.entity";
+import { Complaint } from "./complaint.entity";
 import { randomBytes } from "crypto";
 
 @Entity()
@@ -52,6 +54,12 @@ export class Order {
 
     @OneToMany(() => OrderDriverAssignment, (oda) => oda.order)
     driver_assignments: OrderDriverAssignment[];
+
+    @OneToMany(() => Notification, (notification) => notification.order)
+    notifications: Notification[];
+
+    @OneToMany(() => Complaint, (complaint) => complaint.order)
+    complaints: Complaint[];
 
     @Column({ type: 'enum', enum: PaymentMethod, nullable: true, default: PaymentMethod.COD })
     payment_type: PaymentMethod;

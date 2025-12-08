@@ -11,6 +11,8 @@ import { Favourites } from "./favourites.entity";
 import { UserPaymentMethod } from "./userPaymentMethod.entity";
 import { Products } from "./products.entity";
 import { ShopProduct } from "./shopProducts.entity";
+import { Notification } from "./notification.entity";
+import { Complaint } from "./complaint.entity";
 
 @Entity()
 export class User {
@@ -98,6 +100,12 @@ export class User {
 
     @OneToMany(() => ShopProduct, (shop_product) => shop_product.added_by)
     shop_products: ShopProduct[];
+
+    @OneToMany(() => Notification, (notification) => notification.user)
+    notifications: Notification[];
+
+    @OneToMany(() => Complaint, (complaint) => complaint.user)
+    complaints: Complaint[];
 
     @CreateDateColumn()
     created_at: Date;

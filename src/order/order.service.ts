@@ -10,7 +10,7 @@ import { OrderItem } from '../entities/orderItem.entity';
 import { Products } from '../entities/products.entity';
 import { Stores } from '../entities/stores.entity';
 import { User } from '../entities/user.entity';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, EntityManager, Repository } from 'typeorm';
 import { AdminGetOrdersDto, AssignOrderDto, GetDriverOrdersStatusDto, ReorderDto, UpdateDriverOrderStatusDto, UpdateOrderStatusDto } from './dto/order.dto';
 import { ProductResponseDto } from '../shop-products/dto/shop-product.dto';
 import { calculateDiscountPrice, paginate } from '../utils/product.utils';
@@ -27,6 +27,8 @@ import { OrderDriverAssignment } from '../entities/orderDriverAssignment.entity'
 import { UploadService } from '../utils/upload.service';
 import { ACL_ACCESS } from '../common/enums/product.enum';
 import { CacheService } from '../upstash_redis/cache.service';
+import { Notification } from '../entities/notification.entity';
+import { NotificationType } from '../common/enums/notification.enum';
 
 @Injectable()
 export class OrderService {
@@ -51,10 +53,40 @@ export class OrderService {
         private readonly driverRepo: Repository<Driver>,
         @InjectRepository(OrderDriverAssignment)
         private readonly orderAssignmentRepo: Repository<OrderDriverAssignment>,
+        @InjectRepository(Notification)
+        private readonly notificationRepo: Repository<Notification>,
         private readonly dataSource: DataSource,
         private uploadService: UploadService,
         private readonly cacheService: CacheService,
     ) { }
+
+    private async saveNotification(
+        payload: {
+            user?: User;
+            userId?: string;
+            order?: Order;
+            orderId?: string;
+            type: NotificationType;
+            title: string;
+            message: string;
+            metadata?: Record<string, any>;
+        },
+        manager?: EntityManager,
+    ): Promise<void> {
+        const repo = manager ? manager.getRepository(Notification) : this.notificationRepo;
+        const targetUser = payload.user ?? (payload.userId ? ({ id: payload.userId } as User) : null);
+        if (!targetUser) return;
+
+        const notification = repo.create({
+            type: payload.type,
+            title: payload.title,
+            message: payload.message,
+            metadata: payload.metadata,
+            user: targetUser,
+            order: payload.order ?? (payload.orderId ? ({ id: payload.orderId } as Order) : undefined),
+        });
+        await repo.save(notification);
+    }
 
     // async createOrder(user: User, dto: CheckoutDto): Promise<any> {
     //     // Ensure customer exists
@@ -347,6 +379,17 @@ export class OrderService {
                     customer_address: { id: dto.customer_address_id },
                 });
                 const savedOrder = await orderRepo.save(order);
+                await this.saveNotification(
+                    {
+                        userId: user.id,
+                        order: savedOrder,
+                        type: NotificationType.ORDER_PLACED,
+                        title: 'Order placed',
+                        message: `Your order ${savedOrder.order_number ?? savedOrder.id} has been placed.`,
+                        metadata: { orderStatus: savedOrder.order_status },
+                    },
+                    manager,
+                );
                 createdOrders.push(savedOrder);
             }
 
@@ -727,7 +770,7 @@ export class OrderService {
             /** 1. Find order */
             const order = await orderRepo.findOne({
                 where: { id: order_id },
-                relations: ['items', 'items.shop_product', 'items.shop_product.store'],
+                relations: ['items', 'items.shop_product', 'items.shop_product.store', 'customer', 'customer.user'],
             });
             if (!order) throw new NotFoundException('Order not found');
             if (![OrderStatus.PENDING, OrderStatus.IN_PROGRESS].includes(order.order_status)) {
@@ -793,6 +836,32 @@ export class OrderService {
             /** 7. Update order’s current driver */
             order.driver = driver;
             await orderRepo.save(order);
+
+            await this.saveNotification(
+                {
+                    user: driver.user,
+                    order,
+                    type: NotificationType.DRIVER_ASSIGNED,
+                    title: 'New delivery assigned',
+                    message: `Order ${order.order_number ?? order.id} has been assigned to you.`,
+                    metadata: { orderStatus: order.order_status },
+                },
+                manager,
+            );
+
+            if (order.customer?.user) {
+                await this.saveNotification(
+                    {
+                        user: order.customer.user,
+                        order,
+                        type: NotificationType.DRIVER_ASSIGNED,
+                        title: 'Driver assigned',
+                        message: `A driver has been assigned to your order ${order.order_number ?? order.id}.`,
+                        metadata: { orderStatus: order.order_status },
+                    },
+                    manager,
+                );
+            }
             return { message: 'Driver assigned successfully', order_id: order.id };
         });
     }
@@ -813,6 +882,10 @@ export class OrderService {
                 'items.shop_product',
                 'items.shop_product.store',
                 'items.shop_product.store.merchant',
+                'customer',
+                'customer.user',
+                'driver',
+                'driver.user',
             ],
         });
         if (!order) throw new NotFoundException('Order not found');
@@ -852,6 +925,28 @@ export class OrderService {
         }
         order.order_status = status;
         await this.orderRepo.save(order);
+
+        if (order.customer?.user) {
+            await this.saveNotification({
+                user: order.customer.user,
+                order,
+                type: NotificationType.ORDER_STATUS,
+                title: 'Order status updated',
+                message: `Your order ${order.order_number ?? order.id} is now ${status.replace(/-/g, ' ')}.`,
+                metadata: { orderStatus: status },
+            });
+        }
+
+        if (order.driver?.user) {
+            await this.saveNotification({
+                user: order.driver.user,
+                order,
+                type: NotificationType.ORDER_STATUS,
+                title: 'Order status changed',
+                message: `Order ${order.order_number ?? order.id} status updated to ${status}.`,
+                metadata: { orderStatus: status },
+            });
+        }
 
         return {
             message: 'Order status updated successfully',
@@ -896,14 +991,28 @@ export class OrderService {
     }
 
     async orderStatusByDriver(_user: User, dto: UpdateDriverOrderStatusDto, file?: Express.Multer.File): Promise<any> {
-        console.log({ dto });
         const assignment = await this.orderAssignmentRepo.findOne({
             where: { order: { id: dto.order_id }, driver: { id: dto.driver_id } },
-            relations: ['order', 'driver'],
+            relations: ['order', 'driver', 'order.customer', 'order.customer.user'],
         });
         if (!assignment) {
             throw new NotFoundException('Order assignment not found for this driver');
         }
+        const notifyCustomer = async (title: string, message: string) => {
+            const customerUser = assignment.order.customer?.user;
+            if (!customerUser) return;
+            await this.saveNotification({
+                user: customerUser,
+                order: assignment.order,
+                type: NotificationType.DRIVER_STATUS,
+                title,
+                message,
+                metadata: {
+                    orderStatus: assignment.order.order_status,
+                    driverStatus: dto.status,
+                },
+            });
+        };
         switch (dto.status) {
             case DriverAssignmentStatus.ACCEPTED:
                 if (assignment.status !== DriverAssignmentStatus.ASSIGNED) {
@@ -940,6 +1049,7 @@ export class OrderService {
         if (dto.status === DriverAssignmentStatus.ACCEPTED) {
             order.order_status = OrderStatus.ASSIGNED;
             await this.orderRepo.save(order);
+            await notifyCustomer('Driver accepted your order', `Your driver has accepted order ${order.order_number ?? order.id}.`);
         }
 
         if (dto.status === DriverAssignmentStatus.PICKED) {
@@ -948,6 +1058,7 @@ export class OrderService {
 
             assignment.driver.driver_status = DriverAvailabilityStatus.BUSY
             await this.driverRepo.save(assignment.driver)
+            await notifyCustomer('Order picked up', `Order ${order.order_number ?? order.id} has been picked up and is on the way.`);
         }
         if (dto.status === DriverAssignmentStatus.DELIVERED) {
             if (order.order_status === OrderStatus.COMPLETE) {
@@ -964,8 +1075,13 @@ export class OrderService {
 
             assignment.driver.driver_status = DriverAvailabilityStatus.FREE
             await this.driverRepo.save(assignment.driver)
+            await notifyCustomer('Order delivered', `Order ${order.order_number ?? order.id} has been delivered.`);
         }
         await this.orderAssignmentRepo.save(assignment);
+        if (assignment.order?.customer?.user) {
+            const { password, ...safeUser } = assignment.order.customer.user as any;
+            assignment.order.customer.user = safeUser;
+        }
         return { message: 'Order status updated successfully', assignment };
     }
 

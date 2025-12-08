@@ -1,0 +1,7 @@
+export enum NotificationType {
+    ORDER_PLACED = 'ORDER_PLACED',
+    DRIVER_ASSIGNED = 'DRIVER_ASSIGNED',
+    ORDER_STATUS = 'ORDER_STATUS',
+    DRIVER_STATUS = 'DRIVER_STATUS',
+}
+

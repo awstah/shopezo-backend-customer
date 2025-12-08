@@ -3,6 +3,7 @@ import { User } from "./user.entity";
 import { Cart } from "./cart.entity";
 import { Order } from "./order.entity";
 import { CustomerAddress } from "./customerAddress.entity";
+import { Complaint } from "./complaint.entity";
 
 @Entity()
 export class Customer {
@@ -24,6 +25,9 @@ export class Customer {
 
     @OneToMany(() => Order, (order) => order.customer)
     orders: Order[];
+
+    @OneToMany(() => Complaint, (complaint) => complaint.customer)
+    complaints: Complaint[];
 
     @CreateDateColumn()
     created_at: Date;

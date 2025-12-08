@@ -13,6 +13,7 @@ import { AdminModule } from './admin/admin.module';
 import { ShopProductsModule } from './shop-products/shop-products.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { RedisModule } from './upstash_redis/redis.module';
+import { ComplaintModule } from './complaint/complaint.module';
 
 
 
@@ -45,7 +46,8 @@ import { RedisModule } from './upstash_redis/redis.module';
         CategoriesModule,
         AdminModule,
         ShopProductsModule,
-        AnalyticsModule
+        AnalyticsModule,
+        ComplaintModule
     ],
     controllers: [AppController],
     providers: [AppService],
